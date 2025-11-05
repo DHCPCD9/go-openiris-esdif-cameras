@@ -2,7 +2,7 @@
 Simple tool to use OpenIris esdif cameras over http on linux.
 
 # Usage
-Code gonna output everything to `localhost:8000` (or you can specify it using `-p), to get all streams that you can use, you can just go directly to this URL in your browser.
+Code gonna output everything to `localhost:8000` (or you can specify it using `-port`), to get all streams that you can use, you can just go directly to this URL in your browser.
 
 Stream URL Made from device address that obtained from your system.
 
