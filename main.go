@@ -7,10 +7,7 @@ import (
 	"image/jpeg"
 	"log"
 	"net/http"
-	"os"
-	"os/user"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/google/gousb"
@@ -19,105 +16,62 @@ import (
 	"github.com/kevmo314/go-uvc/pkg/descriptors"
 )
 
-const udevrule = `# Bigscreen Bigeye
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="35bd", ATTRS{idProduct}=="0202", MODE="0660", GROUP="users", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="35bd", ATTRS{idProduct}=="0202", MODE="0660", GROUP="users", TAG+="uaccess"
-`
-const udevfilename = "99-bsb-cams.rules"
+// Defaults for UVC OpenIris EDIF
+var VID = 0x303a
+var PID = 0x8000
 
-func getdevice() (device string) {
+var port = flag.Int("port", 8000, "Port to output frames to.")
+
+func getdevices() []*gousb.Device {
 	ctx := gousb.NewContext()
 	defer ctx.Close()
-	dev, err := ctx.OpenDeviceWithVIDPID(0x35bd, 0x0202)
-	user, _ := user.Current()
-	if user.Username == "root" && !*sudo {
-		log.Print("Running As Root Isnt Reccomended For Safety, Creating A UDEV Rule To Allow Rootless Access ")
-		if _, err := os.Stat(udevfilename); err == nil {
-			log.Print("File Already Exists")
-		} else {
-			err := os.WriteFile(udevfilename, []byte(udevrule), 0644)
-			if err != nil {
-				log.Fatalf("Could not Create File: %v", err)
-			}
-		}
-		var response string
-		log.Print("Would You Like The UDEV Rule Automatically Moved And Put In Place? (Y/N)")
-		fmt.Scan(&response)
-		switch strings.ToLower(response) {
-		case "yes", "ye", "y":
-			log.Printf("Would You Like The Rule Moved To The Userspace (/usr/lib/udev/rules.d/%v) Or The Linux OS Space (/etc/udev/rules.d/%v) (Good For Atomic Operating Systems) ", udevfilename)
-			log.Print("0/Userspace    1/OS Space")
-			fmt.Scan(&response)
-			switch strings.ToLower(response) {
-			case "0", "userspace":
-				log.Printf("Putting File In /usr/lib/udev/rules.d/%v !!", udevfilename)
-				err := os.Rename(udevfilename, "/usr/lib/udev/rules.d/"+udevfilename)
-				if err != nil {
-					log.Fatalf("Could Not Move File: %v", err)
-				}
-			case "1", "os space":
-				log.Printf("Putting File In /etc/udev/rules.d/%v !!", udevfilename)
-				err := os.Rename(udevfilename, "/etc/udev/rules.d/"+udevfilename)
-				if err != nil {
-					log.Fatalf("Could Not Move File: %v", err)
-				}
-			default:
-				log.Fatal("Invalid Response")
-			}
-			log.Print("Please Reboot Your PC For Changes To Take Effect!!")
-			os.Exit(0)
-		case "n", "no":
-			log.Printf("Please move the file (%v) into your udev rule directory and reboot for it to take effect, or if you REALLLLY want to run this program as sudo append --sudo to your run command", udevfilename)
-			os.Exit(0)
-		default:
-			log.Fatal("Invalid Answer")
-		}
-	}
+
+	devices, err := ctx.OpenDevices(func(desc *gousb.DeviceDesc) bool {
+		return desc.Vendor == gousb.ID(VID) && desc.Product == gousb.ID(PID)
+	})
+
 	if err != nil {
-		if err == gousb.ErrorAccess {
-			log.Print("It looks like the cameras cannot be accessed, udev file being created in this directory")
-			log.Printf("Creating UDEV Rule At %v", udevfilename)
-			err := os.WriteFile(udevfilename, []byte(udevrule), 0644)
-			if err != nil {
-				log.Fatalf("Could not Create File: %v", err)
-			}
-			log.Print("File Created ! Please copy to your udev directory, chown to root, and reboot for it to take effect")
-			os.Exit(0)
+		log.Println(err)
+		log.Println("Error while obtaining devices.")
+		return []*gousb.Device{}
+	}
 
-		} else {
-			log.Fatal(err)
-		}
+	for _, device := range devices {
+		defer device.Close()
 	}
-	if dev == nil {
-		log.Fatal("Could Not Find Device, Please Make Sure It Is On And Plugged In !")
-	}
-	defer dev.Close()
-	return fmt.Sprintf("/dev/bus/usb/%03v/%03v", dev.Desc.Bus, dev.Desc.Address)
+
+	return devices
 }
-
-var gitVersion string
-var verbosePtr = flag.Bool("verbose", false, "Whether or not to show libusb errors")
-var port = flag.Int("port", 8080, "What Port To Output Frames To")
-var version = flag.Bool("version", false, "Flag To Show Current Version")
-var sudo = flag.Bool("sudo", false, "Force Program To Run As Sudo")
 
 func main() {
 	flag.Parse()
-	if *version {
-		log.Print("go-bsb-cams " + gitVersion)
-		os.Exit(0)
-	}
-	stream := mjpeg.NewLiveStream()
-	device := getdevice()
-	// Pass your jpegBuffer frames using stream.UpdateJPEG(<your-buffer>)
-	go imagestreamer(stream, device)
-	mux := http.NewServeMux()
-	mux.Handle("/stream", stream)
-	log.Print("Server Is Running And Can Be Accessed At: http://localhost:" + strconv.Itoa(*port) + "/stream")
-	log.Print("Make Sure You Have No Ending / When Inputting The Url Into Baballonia !!!")
-	log.Print("If You Are Here And Cannot See The Cams, Please Close This Program, Unplug And Replug Your BSB, And Try Again :)")
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(*port), mux))
+	devices := getdevices()
 
+	if len(devices) == 0 {
+		log.Fatalln("No devices found.")
+	}
+
+	mux := http.NewServeMux()
+	for _, device := range devices {
+		stream := mjpeg.NewLiveStream()
+		deviceAddress := fmt.Sprintf("/dev/bus/usb/%03v/%03v", device.Desc.Bus, device.Desc.Address)
+
+		go imagestreamer(stream, deviceAddress)
+		mux.Handle(fmt.Sprintf("/stream/%d", device.Desc.Address), stream)
+	}
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		response := "Available streams:\n"
+
+		for _, device := range devices {
+			response += fmt.Sprintf("/stream/%d\n", device.Desc.Address)
+		}
+
+		w.Write([]byte(response))
+	})
+
+	log.Printf("Streaming %d streams to localhost:%s", len(devices), strconv.Itoa(*port))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":"+strconv.Itoa(*port)), mux))
 }
 
 func imagestreamer(stream *mjpeg.Stream, device string) {
@@ -153,10 +107,8 @@ frame:
 			for {
 				fr, err := resp.ReadFrame()
 				if err != nil {
-					if *verbosePtr {
-						log.Print(err)
-						log.Print("Reclaiming Frame Reader and continuing to get frames... ")
-					}
+					log.Print(err)
+					log.Print("Reclaiming Frame Reader and continuing to get frames... ")
 					syscall.Close(deviceFd)
 					goto frame
 				}

@@ -1,4 +1,4 @@
-module github.com/LilliaElaine/go-bsb-cams
+module github.com/DHCPCD9/go-openiris-esdif-cameras
 
 go 1.24.5
 

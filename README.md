@@ -1,15 +1,16 @@
-# go-bsb-cams
-Simple program to take and output the Bigscreen Beyond 2e cameras to a webserver to be used with eyetracking software.
+# go-openiris-esdif-cameras
+Simple tool to use OpenIris esdif cameras over http on linux.
 
-## Usage
-Pre-Compiled Binares are in the Releases Section, and can be run out of the box with `./go-bsb-cams`
+# Usage
+Code gonna output everything to `localhost:8000` (or you can specify it using `-p), to get all streams that you can use, you can just go directly to this URL in your browser.
 
-The code by default outputs to `localhost:8080/stream` but can be configured with the `-port` flag.
+Stream URL Made from device address that obtained from your system.
 
-To run or build the src with golang:
+To use it in Baballonia on linux you need to use `IpCameraCapture` backend.
 
-Clone This repo and get the dependencies with: `go get .`
+# How to build
+Just clone repository, install golang >= 1.24.5 and run `go build` inside directory.
+It gonna produce `go-openiris-esdif-cameras` executable that you can simply run and it gonna stream it on default url.
 
-Execute the following command within the root directory: `go run main.go` to run as a go program 
-
-Alternatively, the program can be built with `go build` and run via the resulting executable.
+# Special thanks
+- [go-bsb-cams](https://github.com/LilliaElaine/go-bsb-cams/tree/main) for workaround that works in same way.
