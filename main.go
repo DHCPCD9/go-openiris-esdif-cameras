@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/google/gousb"
 	"github.com/hybridgroup/mjpeg"
@@ -54,6 +55,7 @@ func main() {
 	mux := http.NewServeMux()
 	for _, device := range devices {
 		stream := mjpeg.NewLiveStream()
+		stream.FrameInterval = 16600 * time.Microsecond
 		deviceAddress := fmt.Sprintf("/dev/bus/usb/%03v/%03v", device.Desc.Bus, device.Desc.Address)
 
 		go imagestreamer(stream, deviceAddress)
@@ -90,6 +92,7 @@ frame:
 	if err != nil {
 		panic(err)
 	}
+
 	for _, iface := range info.StreamingInterfaces {
 
 		for i, desc := range iface.Descriptors {
@@ -100,6 +103,7 @@ frame:
 			frd := iface.Descriptors[i+1].(*descriptors.MJPEGFrameDescriptor)
 
 			resp, err := iface.ClaimFrameReader(fd.Index(), frd.Index())
+
 			if err != nil {
 				log.Print("Yes")
 				panic(err)
